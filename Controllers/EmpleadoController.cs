@@ -1,28 +1,38 @@
-using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 [Route("api/[controller]")]
 [ApiController]
 
 public class EmpleadoController : ControllerBase
 {
-    private readonly EmpleadoContext _context;
+    private readonly IUnidadDeTrabajo _unidadDeTrabajo;
+    private readonly AgregarEmpleadoServicio _agregarEmpleadoServicio;
+    private readonly ModificarEmpleadoServicio _modificarEmpleadoServicio;
+    private readonly BorrarEmpleadoServicio _borrarEmpleadoServicio;
 
-    public EmpleadoController(EmpleadoContext context)
+    public EmpleadoController(
+            IUnidadDeTrabajo unidadDeTrabajo, 
+            AgregarEmpleadoServicio agregarEmpleadoServicio,
+            ModificarEmpleadoServicio modificarEmpleadoServicio,
+            BorrarEmpleadoServicio borrarEmpleadoServicio
+    )
     {
-        _context = context;
+        _unidadDeTrabajo = unidadDeTrabajo;
+        _agregarEmpleadoServicio = agregarEmpleadoServicio;
+        _modificarEmpleadoServicio = modificarEmpleadoServicio;
+        _borrarEmpleadoServicio = borrarEmpleadoServicio;
     }
 
     [HttpGet]
     public async Task<ActionResult<List<EmpleadoRespuesta>>> ObtenerTodosLosEmpleados()
     {
-        List<Empleado>? empleados = await _context.Empleados.ToListAsync();
-        
-        if (empleados == null )
-            return NotFound($"No hay empleados en la base de datos");
+        List<Empleado>? empleados = await _unidadDeTrabajo.EmpleadoRepositorio.ObtenerTodosLosEmpleados();
 
-        List<EmpleadoRespuesta> empleadosRespuesta = new List<EmpleadoRespuesta>();
+        if (empleados == null)
+            return NotFound("No hay empleados en la base de datos");
+
+         List<EmpleadoRespuesta> empleadosRespuesta = new List<EmpleadoRespuesta>(); 
 
         foreach (Empleado e in empleados)
         {
@@ -42,36 +52,42 @@ public class EmpleadoController : ControllerBase
             empleadosRespuesta.Add(empleadoRespuesta);
         }
 
-        return Ok(empleadosRespuesta);
+        return empleadosRespuesta; 
     }
 
     [Route("{id}")]
     [HttpGet]
     public async Task<ActionResult<EmpleadoRespuesta>> ObtenerEmpleadoPorId(int id)
     {
-
         if (id < 1)
             return BadRequest($"El id [{id}] no es un id Valido");
 
-            Empleado? empleado = await _context.Empleados.FindAsync(id);
-            
-            if (empleado == null)
-                return NotFound($"No se encontro el empleado con id [{id}]");    
-
-        EmpleadoRespuesta empleadoRespuesta = new EmpleadoRespuesta()
+        try
         {
-            Id = empleado.Id,
-            Nombre = empleado.Nombre,
-            Apellido = empleado.Apellido, 
-            FechaDeNacimiento = empleado.FechaDeNacimiento,
-            TipoDeDocumento = empleado.TipoDeDocumento,
-            NumeroDeDocumento = empleado.NumeroDeDocumento,
-            MateriaQueDicta = empleado.MateriaQueDicta,
-            FechaDeIngreso = empleado.FechaDeIngreso,
-            FechaDeCese = empleado.FechaDeCese
-        };
+            Empleado? empleado = await _unidadDeTrabajo.EmpleadoRepositorio.ObtenerEmpleadoPorId(id);
 
-        return Ok(empleadoRespuesta);
+            if (empleado == null)
+                return NotFound($"El empleado con Id [{id}] no se encuentra en la base de datos");
+            
+            EmpleadoRespuesta empleadoRespuesta = new EmpleadoRespuesta()
+            {
+                Id = empleado.Id,
+                Nombre = empleado.Nombre,
+                Apellido = empleado.Apellido,
+                FechaDeNacimiento = empleado.FechaDeNacimiento,
+                TipoDeDocumento = empleado.TipoDeDocumento,
+                NumeroDeDocumento = empleado.NumeroDeDocumento,
+                MateriaQueDicta = empleado.MateriaQueDicta,
+                FechaDeIngreso = empleado.FechaDeIngreso,
+                FechaDeCese = empleado.FechaDeCese,
+            };
+
+            return Ok(JsonSerializer.Serialize(empleadoRespuesta));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Hubo un error al hacer la peticion: {ex.Message}");
+        }
     }
 
     [HttpPost]
@@ -79,106 +95,10 @@ public class EmpleadoController : ControllerBase
     {
         try
         {
-            Empleado nuevoEmpleado = new Empleado()
-            {
-                Nombre = empleadoNuevoPeticion.Nombre,
-                Apellido = empleadoNuevoPeticion.Apellido,
-                FechaDeNacimiento = empleadoNuevoPeticion.FechaDeNacimiento,
-                TipoDeDocumento = empleadoNuevoPeticion.TipoDeDocumento,
-                NumeroDeDocumento = empleadoNuevoPeticion.NumeroDeDocumento,
-                MateriaQueDicta = empleadoNuevoPeticion.MateriaQueDicta,
-                FechaDeIngreso = empleadoNuevoPeticion.FechaDeIngreso
-            };
-
-            await _context.Empleados.AddAsync(nuevoEmpleado);
-            await _context.SaveChangesAsync();
-
-            EmpleadoRespuesta empleadoRespuesta = new EmpleadoRespuesta()
-            {
-                Id = nuevoEmpleado.Id,
-                Nombre = nuevoEmpleado.Nombre,
-                Apellido = nuevoEmpleado.Apellido, 
-                FechaDeNacimiento = nuevoEmpleado.FechaDeNacimiento,
-                TipoDeDocumento = nuevoEmpleado.TipoDeDocumento,
-                NumeroDeDocumento = nuevoEmpleado.NumeroDeDocumento,
-                MateriaQueDicta = nuevoEmpleado.MateriaQueDicta,
-                FechaDeIngreso = nuevoEmpleado.FechaDeIngreso,
-                FechaDeCese = nuevoEmpleado.FechaDeCese
-            };
-
-            return Ok(empleadoRespuesta);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest($"Hubo un problema al crear un nuevo empleado: {ex.Message}");
-        }
-    }
-
-    [HttpPut]
-    public async Task<ActionResult<EmpleadoRespuesta>> ModificarEmpleado([FromBody] EmpleadoModificacionPeticion nuevoEmpleado)
-    { 
-        try
-        {
-            if(nuevoEmpleado.Id < 1)
-                return BadRequest($"El id [{nuevoEmpleado.Id}] no es un id valido, este debe ser un entero mayor a 0");
-
-            Empleado? empleado = await _context.Empleados.FindAsync(nuevoEmpleado.Id);
-
-            if (empleado != null)
-            {
-                empleado.Nombre = nuevoEmpleado.Nombre;
-                empleado.Apellido = nuevoEmpleado.Apellido;
-                empleado.FechaDeNacimiento = nuevoEmpleado.FechaDeNacimiento;
-                empleado.TipoDeDocumento = nuevoEmpleado.TipoDeDocumento;   // validar si ya existe el tipo y el numero documento en la DB
-                empleado.NumeroDeDocumento = nuevoEmpleado.NumeroDeDocumento;  
-                empleado.MateriaQueDicta = nuevoEmpleado.MateriaQueDicta;
-                empleado.FechaDeIngreso = nuevoEmpleado.FechaDeIngreso;
-                empleado.FechaDeCese =  nuevoEmpleado.FechaDeCese;
-
-                _context.Empleados.Update(empleado);
-                await _context.SaveChangesAsync();
-
-                EmpleadoRespuesta empleadoRespuesta = new EmpleadoRespuesta()
-                {
-                    Id = empleado.Id,
-                    Nombre = empleado.Nombre,
-                    Apellido = empleado.Apellido, 
-                    FechaDeNacimiento = empleado.FechaDeNacimiento,
-                    TipoDeDocumento = empleado.TipoDeDocumento,
-                    NumeroDeDocumento = empleado.NumeroDeDocumento,
-                    MateriaQueDicta = empleado.MateriaQueDicta,
-                    FechaDeIngreso = empleado.FechaDeIngreso,
-                    FechaDeCese = empleado.FechaDeCese
-                };
-
-                return Ok(empleadoRespuesta);
-            }
-            else
-            {
-                return NotFound($"El empleado con Id [{nuevoEmpleado.Id}] no se encuentra en la base de datos");
-            } 
-        }
-        catch (Exception ex)
-        {
-            return BadRequest($"Peticion echa de forma incorrecta: {ex.Message}");
-        }
-    }
-
-    [HttpDelete]
-    public async Task<ActionResult<EmpleadoRespuesta>> BorrarEmpleado([FromQuery] int id)
-    {
-        try
-        {
-            if (id < 1)
-                return BadRequest($"El id [{id}] no es un id Valido");
-            
-            Empleado? empleado = await _context.Empleados.FindAsync(id);
+            Empleado? empleado = await _agregarEmpleadoServicio.Ejecutar(empleadoNuevoPeticion);
 
             if (empleado == null)
-                return NotFound($"No se encontro el empleado con el id [{id}]");
-
-            _context.Empleados.Remove(empleado);
-            await _context.SaveChangesAsync();
+                return BadRequest("Valide los datos de ingreso"); 
 
             EmpleadoRespuesta empleadoRespuesta = new EmpleadoRespuesta()
             {
@@ -192,8 +112,70 @@ public class EmpleadoController : ControllerBase
                 FechaDeIngreso = empleado.FechaDeIngreso,
                 FechaDeCese = empleado.FechaDeCese
             };
+
+            return Ok($"Empleado agregado correctamente: {JsonSerializer.Serialize(empleadoRespuesta)}");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, ex.Message);
+        }
+    }
+
+    [HttpPut]
+    public async Task<ActionResult<EmpleadoRespuesta>> ModificarEmpleado([FromBody] EmpleadoModificacionPeticion nuevoEmpleado)
+    { 
+        try
+        {
+            Empleado? empleado = await _modificarEmpleadoServicio.Ejecutar(nuevoEmpleado);
+
+            if (empleado == null)
+                return BadRequest("No se pudo modificar el empleado, verifique los datos ingresados");
+
+            EmpleadoRespuesta empleadoRespuesta = new EmpleadoRespuesta()
+            {
+                Id = empleado.Id,
+                Nombre = empleado.Nombre,
+                Apellido = empleado.Apellido, 
+                FechaDeNacimiento = empleado.FechaDeNacimiento,
+                TipoDeDocumento = empleado.TipoDeDocumento,
+                NumeroDeDocumento = empleado.NumeroDeDocumento,
+                MateriaQueDicta = empleado.MateriaQueDicta,
+                FechaDeIngreso = empleado.FechaDeIngreso,
+                FechaDeCese = empleado.FechaDeCese
+            };
+
+            return Ok($"Empleado modificado correctamente: {JsonSerializer.Serialize(empleadoRespuesta)}");
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Peticion echa de forma incorrecta: {ex.Message}");
+        }
+    }
+
+    [HttpDelete]
+    public async Task<ActionResult<EmpleadoRespuesta>> BorrarEmpleado([FromQuery] int id)
+    {
+        try
+        {
+            Empleado? empleado = await _borrarEmpleadoServicio.Ejecutar(id);
             
-            return Ok($"Se borro correctamente el empleado: {empleadoRespuesta}");
+            if (empleado == null)
+                return NotFound($"No se encontro empleado con id {id}");
+            
+            EmpleadoRespuesta empleadoRespuesta = new EmpleadoRespuesta()
+            {
+                Id = empleado.Id,
+                Nombre = empleado.Nombre,
+                Apellido = empleado.Apellido, 
+                FechaDeNacimiento = empleado.FechaDeNacimiento,
+                TipoDeDocumento = empleado.TipoDeDocumento,
+                NumeroDeDocumento = empleado.NumeroDeDocumento,
+                MateriaQueDicta = empleado.MateriaQueDicta,
+                FechaDeIngreso = empleado.FechaDeIngreso,
+                FechaDeCese = empleado.FechaDeCese
+            };
+
+            return Ok($"Se borro correctamente el empleado: {JsonSerializer.Serialize(empleadoRespuesta)}");
         }
         catch (Exception ex)
         {

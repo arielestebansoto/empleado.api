@@ -19,6 +19,13 @@ builder.Services.AddDbContext<EmpleadoContext>(options =>
     //options.EnableSensitiveDataLogging();
 });
 
+// agrego el repositorio y la unidad de trabajo
+builder.Services.AddScoped<IEmpleadoRepositorio, EmpleadoRepositorio>();
+builder.Services.AddScoped<IUnidadDeTrabajo, UnidadDeTrabajo>();
+builder.Services.AddScoped<AgregarEmpleadoServicio>();
+builder.Services.AddScoped<ModificarEmpleadoServicio>();
+builder.Services.AddScoped<BorrarEmpleadoServicio>();
+
 var app = builder.Build();
 
 
